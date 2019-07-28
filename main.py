@@ -25,18 +25,6 @@ def get_y_train(input_path, file_name):
     return np.nan_to_num(y_train).astype(np.float)
 
 
-def write_to_file(file, data):
-    for i in range(len(data)):
-        output_string = ""
-
-        for j in range(len(data[i])):
-            output_string = output_string + str(data[i][j]) + ','
-
-        output_string = output_string[:-1] + '\n'
-
-        file.write(output_string)
-
-
 def fit_model(input_model, load_bool, apply_bool, input_path, data_name, label_name, output_path, epochs):
     print("Get training data")
 
@@ -125,6 +113,18 @@ def fit_model(input_model, load_bool, apply_bool, input_path, data_name, label_n
     return model
 
 
+def write_to_file(file, data):
+    for i in range(len(data)):
+        output_string = ""
+
+        for j in range(len(data[i])):
+            output_string = output_string + str(data[i][j]) + ','
+
+        output_string = output_string[:-1] + '\n'
+
+        file.write(output_string)
+
+
 def test_model(input_model, data_input_path, data_input_name, data_input_label_name, model_input_path, output_path):
     print("Get test data")
 
@@ -169,7 +169,7 @@ def test_model(input_model, data_input_path, data_input_name, data_input_label_n
         else:
             difference.append(np.array(1))
 
-    print("Difference: " + str(sum(difference)))
+    print("Difference: " + str((sum(difference) / len(y_test)) * 100) + "%")
 
     with open(output_path + "/difference.csv", 'w') as file:
         write_to_file(file, np.reshape(np.asarray(difference), (-1, 1)))
@@ -177,7 +177,7 @@ def test_model(input_model, data_input_path, data_input_name, data_input_label_n
 
 if __name__ == "__main__":
     fit_model_bool = True
-    while_bool = True
+    while_bool = False
 
     if fit_model_bool:
         while_model = None
@@ -185,14 +185,14 @@ if __name__ == "__main__":
         while True:
             print("Fit model")
 
-            fit_model(while_model,
-                      while_bool,
-                      True,
-                      "./data/",
-                      "/train-images-idx3-ubyte",
-                      "/train-labels-idx1-ubyte",
-                      "./results/",
-                      10)
+            while_model = fit_model(while_model,
+                                    while_bool,
+                                    True,
+                                    "./data/",
+                                    "/train-images-idx3-ubyte",
+                                    "/train-labels-idx1-ubyte",
+                                    "./results/",
+                                    10)
 
             if not while_bool:
                 break
