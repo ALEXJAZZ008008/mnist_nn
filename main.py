@@ -25,7 +25,7 @@ def get_y_train(input_path, file_name):
     return np.nan_to_num(y_train).astype(np.float)
 
 
-def fit_model(input_model, load_bool, apply_bool, input_path, data_name, label_name, output_path, epochs):
+def fit_model(input_model, save_bool, load_bool, apply_bool, input_path, data_name, label_name, output_path, epochs):
     print("Get training data")
 
     x_train = get_x_train(input_path, data_name)
@@ -43,48 +43,22 @@ def fit_model(input_model, load_bool, apply_bool, input_path, data_name, label_n
 
             input_x = k.layers.Input(x_train.shape[1:])
 
-            x = k.layers.UpSampling1D(10)(input_x)  # upsample by factor of 2
+            x = k.layers.UpSampling1D(1)(input_x)
 
-            # 5 x 5 x (previous num channels = 1) kernels (32 times => 32 output channels)
-            # padding='same' for zero padding
-            x = k.layers.Conv1D(32, 5, activation=k.activations.relu, padding='same')(x)
-            x = k.layers.AveragePooling1D(2)(x)  # downsample by factor of 2, using "average" interpolation
+            x = k.layers.Conv1D(32, 3, activation=k.activations.relu, padding='same')(x)
+            x = k.layers.AveragePooling1D(2)(x)
 
-            # 3 x 3 x (previous num channels = 32) kernels (64 times)
             x = k.layers.Conv1D(64, 3, activation=k.activations.relu, padding='same')(x)
-            x = k.layers.AveragePooling1D(2)(x)  # downsample by factor of 2, using "average" interpolation
+            x = k.layers.AveragePooling1D(2)(x)
 
-            # 3 x 3 x (previous num channels = 64) kernels (128 times)
-            x = k.layers.Conv1D(128, 3, activation=k.activations.relu, padding='same')(x)
-            x = k.layers.AveragePooling1D(2)(x)  # downsample by factor of 2, using "average" interpolation
+            x = k.layers.Conv1D(192, 1, activation=k.activations.relu, padding='same')(x)
 
-            # 3 x 3 x (previous num channels = 128) kernels (256 times)
-            x = k.layers.Conv1D(256, 3, activation=k.activations.relu, padding='same')(x)
-            x = k.layers.AveragePooling1D(2)(x)  # downsample by factor of 2, using "average" interpolation
-
-            # 1 x 1 x (previous num channels = 256) kernels (256 times)
-            x = k.layers.Conv1D(256, 1, activation=k.activations.relu, padding='same')(x)
-
-            # 1 x 1 x (previous num channels = 256) kernels (256 times)
-            x = k.layers.Conv1D(256, 1, activation=k.activations.relu, padding='same')(x)
-
-            # 1 x 1 x (previous num channels = 256) kernels (256 times)
-            x = k.layers.Conv1D(256, 1, activation=k.activations.relu, padding='same')(x)
-
-            x = k.layers.Flatten()(x)  # vectorise
-
-            x = k.layers.Dense(256, activation=k.activations.relu)(x)  # traditional neural layer with 256 outputs
-            x = k.layers.Dropout(0.20)(x)  # discard 20% outputs
-
-            x = k.layers.Dense(1280, activation=k.activations.relu)(x)  # traditional neural layer with 1280 outputs
-            x = k.layers.Dropout(0.50)(x)  # discard 50% outputs
-
-            x = k.layers.Dense(10, activation=k.activations.softmax)(x)  # 10 outputs
+            x = k.layers.Flatten()(x)
+            x = k.layers.Dense(192, activation=k.activations.relu)(x)
+            x = k.layers.Dense(10, activation=k.activations.softmax)(x)
 
             model = k.Model(input_x, x)
 
-            # losses:  K.losses.*
-            # optimisers: K.optimizers.*
             model.compile(optimizer=k.optimizers.Nadam(), loss=k.losses.sparse_categorical_crossentropy)
     else:
         print("Using input model")
@@ -105,7 +79,8 @@ def fit_model(input_model, load_bool, apply_bool, input_path, data_name, label_n
     if not os.path.exists(output_path):
         os.mkdir(output_path)
 
-    model.save(output_path + "/model.h5")
+    if save_bool:
+        model.save(output_path + "/model.h5")
 
     if apply_bool:
         test_model(model, input_path, data_name, label_name, input_path, output_path)
@@ -186,6 +161,7 @@ if __name__ == "__main__":
             print("Fit model")
 
             while_model = fit_model(while_model,
+                                    False,
                                     while_bool,
                                     True,
                                     "./data/",
