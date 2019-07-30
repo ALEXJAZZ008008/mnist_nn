@@ -107,3 +107,4 @@ venv.bak/
 .idea
 *.csv
 *.h5
+*.png
