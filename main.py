@@ -56,7 +56,7 @@ def fit_model(input_model,
 
             input_x = k.layers.Input(x_train.shape[1:])
 
-            x = network_regularisation.resnet(input_x)
+            x = network_regularisation.conv_fully_connected(input_x)
 
             x = network.output_module(x)
 
