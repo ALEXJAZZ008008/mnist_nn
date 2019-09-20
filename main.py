@@ -1,17 +1,18 @@
 from __future__ import division, print_function
 import os
+import tensorflow as tf
 from tensorflow import keras as k
 import numpy as np
 import idx2numpy
 
 import network
-import network_regularisation
 
 
 def get_x_train(input_path, file_name):
     print("Getting x train")
 
     x_train = idx2numpy.convert_from_file(input_path + file_name)
+    x_train = np.expand_dims(x_train, axis=3)
 
     print("Got x train")
 
@@ -38,7 +39,9 @@ def fit_model(input_model,
               test_data_name,
               test_label_name,
               output_path,
-              epochs):
+              epochs,
+              lr,
+              lr_factor):
     print("Get training data")
 
     x_train = get_x_train(input_path, data_name)
@@ -54,33 +57,64 @@ def fit_model(input_model,
         else:
             print("Generate new model")
 
+            output_size = 10
+
             input_x = k.layers.Input(x_train.shape[1:])
 
-            x = network_regularisation.conv_fully_connected(input_x)
+            x = network.simple_resnet(input_x, output_size)
 
-            x = network.output_module(x)
+            x = network.output_module(x, output_size)
 
-            model = k.Model(input_x, x)
+            model = k.Model(inputs=input_x, outputs=x)
 
-            model.compile(optimizer=k.optimizers.Nadam(),
+            model.compile(optimizer=k.optimizers.SGD(lr=lr),
                           loss=k.losses.sparse_categorical_crossentropy,
                           metrics=["accuracy"])
+
     else:
         print("Using input model")
 
         model = input_model
+
+    tf.compat.v1.keras.backend.set_value(model.optimizer.lr, lr)
+
+    print("lr: " + str(k.backend.eval(model.optimizer.lr)))
 
     model.summary()
     k.utils.plot_model(model, output_path + "model.png")
 
     print("Fitting model")
 
-    model.fit(x_train, y_train, epochs=epochs, verbose=1)
+    tf.compat.v1.keras.backend.get_session().run(tf.compat.v1.local_variables_initializer())
 
-    loss = model.evaluate(x_train, y_train, verbose=0)
-    print('Train loss:', loss)
+    y_train_len = len(y_train)
+    batch_size = int(y_train_len / 4)
 
-    print("Saving model")
+    if batch_size <= 0:
+        batch_size = 1
+
+    patience = int(epochs / 11)
+
+    if patience <= 0:
+        patience = 1
+
+    reduce_lr = k.callbacks.ReduceLROnPlateau(monitor="acc",
+                                              factor=lr_factor,
+                                              patience=patience,
+                                              cooldown=1,
+                                              verbose=0)
+
+    loss = model.evaluate(x_train, y_train, batch_size=batch_size, verbose=0)
+
+    print("Metrics: ", model.metrics_names)
+    print("Train loss, acc:", loss)
+
+    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, callbacks=[reduce_lr], verbose=1)
+
+    loss = model.evaluate(x_train, y_train, batch_size=batch_size, verbose=0)
+
+    print("Metrics: ", model.metrics_names)
+    print("Train loss, acc:", loss)
 
     if not os.path.exists(output_path):
         os.mkdir(output_path)
@@ -91,7 +125,7 @@ def fit_model(input_model,
     if apply_bool:
         test_model(model, input_path, test_data_name, test_label_name, input_path, output_path)
 
-    return model
+    return model, k.backend.eval(model.optimizer.lr)
 
 
 def write_to_file(file, data):
@@ -136,7 +170,7 @@ def test_model(input_model, data_input_path, data_input_name, data_input_label_n
 
         output.append(np.array(index))
 
-    output = np.reshape(np.asarray(output), (-1, 1))
+    output = np.reshape(np.asfarray(output), (-1, 1))
 
     with open(output_path + "/output.csv", 'w') as file:
         write_to_file(file, output)
@@ -153,53 +187,78 @@ def test_model(input_model, data_input_path, data_input_name, data_input_label_n
     print("Difference: " + str((sum(difference) / len(y_test)) * 100) + "%")
 
     with open(output_path + "/difference.csv", 'w') as file:
-        write_to_file(file, np.reshape(np.asarray(difference), (-1, 1)))
+        write_to_file(file, np.reshape(np.asfarray(difference), (-1, 1)))
+
+    return output
 
 
 def main(fit_model_bool, while_bool, mnist_bool):
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.compat.v1.Session(config=config)
+
+    tf.compat.v1.keras.backend.set_session(sess)
+
+    tf.compat.v1.keras.backend.set_floatx("float16")
+
     if fit_model_bool:
         while_model = None
 
         while True:
             print("Fit model")
 
+            lr = 1.0
+            lr_factor = 0.9
+
             if mnist_bool:
-                while_model = fit_model(while_model,
-                                        True,
-                                        while_bool,
-                                        True,
-                                        "./data/mnist/",
-                                        "/train-images-idx3-ubyte",
-                                        "/train-labels-idx1-ubyte",
-                                        "/t10k-images-idx3-ubyte",
-                                        "/t10k-labels-idx1-ubyte",
-                                        "./results/",
-                                        10)
+                while_model, lr = fit_model(while_model,
+                                            True,
+                                            while_bool,
+                                            True,
+                                            "./data/mnist/",
+                                            "/train-images-idx3-ubyte",
+                                            "/train-labels-idx1-ubyte",
+                                            "/t10k-images-idx3-ubyte",
+                                            "/t10k-labels-idx1-ubyte",
+                                            "./results/",
+                                            1000,
+                                            lr,
+                                            lr_factor)
             else:
-                while_model = fit_model(while_model,
-                                        True,
-                                        while_bool,
-                                        True,
-                                        "./data/fashion/",
-                                        "/train-images-idx3-ubyte",
-                                        "/train-labels-idx1-ubyte",
-                                        "/t10k-images-idx3-ubyte",
-                                        "/t10k-labels-idx1-ubyte",
-                                        "./results/",
-                                        10)
+                while_model, lr = fit_model(while_model,
+                                            True,
+                                            while_bool,
+                                            True,
+                                            "./data/fashion/",
+                                            "/train-images-idx3-ubyte",
+                                            "/train-labels-idx1-ubyte",
+                                            "/t10k-images-idx3-ubyte",
+                                            "/t10k-labels-idx1-ubyte",
+                                            "./results/",
+                                            1000,
+                                            lr,
+                                            lr_factor)
 
             if not while_bool:
                 break
     else:
         print("Test model")
 
-        test_model(None,
-                   "./data/",
-                   "/t10k-images-idx3-ubyte",
-                   "/t10k-labels-idx1-ubyte",
-                   "./results/",
-                   "./results/")
+        if mnist_bool:
+            test_model(None,
+                       "./data/mnist/",
+                       "/t10k-images-idx3-ubyte",
+                       "/t10k-labels-idx1-ubyte",
+                       "./results/",
+                       "./results/")
+        else:
+            test_model(None,
+                       "./data/fashion/",
+                       "/t10k-images-idx3-ubyte",
+                       "/t10k-labels-idx1-ubyte",
+                       "./results/",
+                       "./results/")
 
 
 if __name__ == "__main__":
-    main(True, False, False)
+    main(True, False, True)
