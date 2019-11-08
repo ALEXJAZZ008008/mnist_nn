@@ -1,11 +1,19 @@
 from __future__ import division, print_function
 import os
-import tensorflow as tf
-from tensorflow import keras as k
+import keras as k
 import numpy as np
 import idx2numpy
 
 import network
+
+
+# https://stackoverflow.com/questions/36000843/scale-numpy-array-to-certain-range
+def rescale_linear(array, new_min, new_max):
+    """Rescale an arrary linearly."""
+    minimum, maximum = np.min(array), np.max(array)
+    m = (new_max - new_min) / (maximum - minimum)
+    b = new_min - m * minimum
+    return m * array + b
 
 
 def get_x_train(input_path, file_name):
@@ -14,9 +22,14 @@ def get_x_train(input_path, file_name):
     x_train = idx2numpy.convert_from_file(input_path + file_name)
     x_train = np.expand_dims(x_train, axis=3)
 
+    x_train = np.nan_to_num(x_train).astype(np.float32)
+
+    for i in range(len(x_train)):
+        x_train[i] = rescale_linear(x_train[i], 0.0, 1.0)
+
     print("Got x train")
 
-    return np.nan_to_num(x_train).astype(np.float)
+    return x_train
 
 
 def get_y_train(input_path, file_name):
@@ -26,7 +39,7 @@ def get_y_train(input_path, file_name):
 
     print("Got y train")
 
-    return np.nan_to_num(y_train).astype(np.float)
+    return np.nan_to_num(y_train).astype(np.float32)
 
 
 def fit_model(input_model,
@@ -39,9 +52,7 @@ def fit_model(input_model,
               test_data_name,
               test_label_name,
               output_path,
-              epochs,
-              lr,
-              lr_factor):
+              epochs):
     print("Get training data")
 
     x_train = get_x_train(input_path, data_name)
@@ -61,13 +72,13 @@ def fit_model(input_model,
 
             input_x = k.layers.Input(x_train.shape[1:])
 
-            x = network.simple_resnet(input_x, output_size)
+            x = network.test_down_out(input_x)
 
-            x = network.output_module(x, output_size)
+            x = network.output_module(x, output_size, "softmax")
 
             model = k.Model(inputs=input_x, outputs=x)
 
-            model.compile(optimizer=k.optimizers.SGD(lr=lr),
+            model.compile(optimizer=k.optimizers.Adadelta(),
                           loss=k.losses.sparse_categorical_crossentropy,
                           metrics=["accuracy"])
 
@@ -76,42 +87,38 @@ def fit_model(input_model,
 
         model = input_model
 
-    tf.compat.v1.keras.backend.set_value(model.optimizer.lr, lr)
-
-    print("lr: " + str(k.backend.eval(model.optimizer.lr)))
-
     model.summary()
     k.utils.plot_model(model, output_path + "model.png")
 
     print("Fitting model")
 
-    tf.compat.v1.keras.backend.get_session().run(tf.compat.v1.local_variables_initializer())
-
     y_train_len = len(y_train)
-    batch_size = int(y_train_len / 4)
+    batch_size = int(y_train_len / 10)
 
     if batch_size <= 0:
         batch_size = 1
 
-    patience = int(epochs / 11)
+    datagen = k.preprocessing.image.ImageDataGenerator(
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        shear_range=10,
+        zoom_range=0.1,
+        fill_mode="wrap",
+        horizontal_flip=False,
+        vertical_flip=False)
 
-    if patience <= 0:
-        patience = 1
+    # compute quantities required for featurewise normalization
+    # (std, mean, and principal components if ZCA whitening is applied)
+    datagen.fit(x_train)
 
-    reduce_lr = k.callbacks.ReduceLROnPlateau(monitor="acc",
-                                              factor=lr_factor,
-                                              patience=patience,
-                                              cooldown=1,
-                                              verbose=0)
+    # fits the model on batches with real-time data augmentation:
+    model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size),
+                        steps_per_epoch=len(x_train) / batch_size, epochs=epochs, verbose=1)
 
-    loss = model.evaluate(x_train, y_train, batch_size=batch_size, verbose=0)
+    # model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1)
 
-    print("Metrics: ", model.metrics_names)
-    print("Train loss, acc:", loss)
-
-    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, callbacks=[reduce_lr], verbose=1)
-
-    loss = model.evaluate(x_train, y_train, batch_size=batch_size, verbose=0)
+    loss = model.evaluate(x_train, y_train, batch_size=batch_size, verbose=1)
 
     print("Metrics: ", model.metrics_names)
     print("Train loss, acc:", loss)
@@ -193,22 +200,11 @@ def test_model(input_model, data_input_path, data_input_name, data_input_label_n
 
 
 def main(fit_model_bool, while_bool, mnist_bool):
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    sess = tf.compat.v1.Session(config=config)
-
-    tf.compat.v1.keras.backend.set_session(sess)
-
-    tf.compat.v1.keras.backend.set_floatx("float16")
-
     if fit_model_bool:
         while_model = None
 
         while True:
             print("Fit model")
-
-            lr = 1.0
-            lr_factor = 0.9
 
             if mnist_bool:
                 while_model, lr = fit_model(while_model,
@@ -221,9 +217,7 @@ def main(fit_model_bool, while_bool, mnist_bool):
                                             "/t10k-images-idx3-ubyte",
                                             "/t10k-labels-idx1-ubyte",
                                             "./results/",
-                                            1000,
-                                            lr,
-                                            lr_factor)
+                                            10)
             else:
                 while_model, lr = fit_model(while_model,
                                             True,
@@ -235,9 +229,7 @@ def main(fit_model_bool, while_bool, mnist_bool):
                                             "/t10k-images-idx3-ubyte",
                                             "/t10k-labels-idx1-ubyte",
                                             "./results/",
-                                            1000,
-                                            lr,
-                                            lr_factor)
+                                            10)
 
             if not while_bool:
                 break
@@ -261,4 +253,4 @@ def main(fit_model_bool, while_bool, mnist_bool):
 
 
 if __name__ == "__main__":
-    main(True, False, True)
+    main(True, True, True)
