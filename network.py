@@ -884,10 +884,6 @@ def test_up(x, x_shortcut_5, x_shortcut_4, x_shortcut_3, x_shortcut_2, x_shortcu
 
     x = k.layers.Concatenate(axis=3)([x, x_shortcut_1])
 
-    x = k.layers.Convolution2D(filters=1, kernel_size=(11, 11), strides=(9, 9), padding="same")(x)
-    x = k.layers.Activation("selu")(x)
-    x = k.layers.Dropout(0.5)(x)
-
     return x
 
 

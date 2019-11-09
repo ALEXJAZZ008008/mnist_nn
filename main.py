@@ -7,16 +7,7 @@ import idx2numpy
 import network
 
 
-# https://stackoverflow.com/questions/36000843/scale-numpy-array-to-certain-range
-def rescale_linear(array, new_min, new_max):
-    """Rescale an arrary linearly."""
-    minimum, maximum = np.min(array), np.max(array)
-    m = (new_max - new_min) / (maximum - minimum)
-    b = new_min - m * minimum
-    return m * array + b
-
-
-def get_x_train(input_path, file_name):
+def get_x(input_path, file_name):
     print("Getting x train")
 
     x_train = idx2numpy.convert_from_file(input_path + file_name)
@@ -25,14 +16,14 @@ def get_x_train(input_path, file_name):
     x_train = np.nan_to_num(x_train).astype(np.float32)
 
     for i in range(len(x_train)):
-        x_train[i] = rescale_linear(x_train[i], 0.0, 1.0)
+        x_train[i] = (x_train[i] - x_train[i].mean()) / x_train[i].std()
 
     print("Got x train")
 
     return x_train
 
 
-def get_y_train(input_path, file_name):
+def get_y(input_path, file_name):
     print("Get y train")
 
     y_train = idx2numpy.convert_from_file(input_path + file_name)
@@ -55,8 +46,8 @@ def fit_model(input_model,
               epochs):
     print("Get training data")
 
-    x_train = get_x_train(input_path, data_name)
-    y_train = get_y_train(input_path, label_name)
+    x_train = get_x(input_path, data_name)
+    y_train = get_y(input_path, label_name)
 
     if input_model is None:
         print("No input model")
@@ -150,8 +141,8 @@ def write_to_file(file, data):
 def test_model(input_model, data_input_path, data_input_name, data_input_label_name, model_input_path, output_path):
     print("Get test data")
 
-    x_test = get_x_train(data_input_path, data_input_name)
-    y_test = get_y_train(data_input_path, data_input_label_name)
+    x_test = get_x(data_input_path, data_input_name)
+    y_test = get_y(data_input_path, data_input_label_name)
 
     if input_model is None:
         print("No input model")
